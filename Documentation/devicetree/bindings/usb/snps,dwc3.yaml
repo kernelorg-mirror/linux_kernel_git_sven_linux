@@ -60,7 +60,7 @@ properties:
   dma-coherent: true
 
   iommus:
-    maxItems: 1
+    maxItems: 2
 
   power-domains:
     description:
