@@ -47,10 +47,8 @@
 #define APPLE_ANS_BOOT_STATUS	 0x1300
 #define APPLE_ANS_BOOT_STATUS_OK 0xde71ce55
 
-#define APPLE_ANS_UNKNOWN_CTRL	 0x24008
 #define APPLE_ANS_PRP_NULL_CHECK BIT(11)
 
-#define APPLE_ANS_LINEAR_SQ_CTRL 0x24908
 #define APPLE_ANS_LINEAR_SQ_EN	 BIT(0)
 
 #define APPLE_ANS_LINEAR_ASQ_DB	 0x2490c
@@ -171,6 +169,8 @@ struct apple_nvme_iod {
 struct apple_nvme_hw {
 	bool has_lsq_nvmmu;
 	u32 max_queue_depth;
+	u32 unknown_ctrl_offset;
+	u32 linear_sq_ctrl_offset;
 };
 
 struct apple_nvme {
@@ -1114,7 +1114,7 @@ static void apple_nvme_reset_work(struct work_struct *work)
 		 * since T6000.
 		 */
 		writel(APPLE_ANS_LINEAR_SQ_EN,
-			anv->mmio_nvme + APPLE_ANS_LINEAR_SQ_CTRL);
+			anv->mmio_nvme + anv->hw->linear_sq_ctrl_offset);
 
 		/* Allow as many pending command as possible for both queues */
 		writel(anv->hw->max_queue_depth
@@ -1132,9 +1132,9 @@ static void apple_nvme_reset_work(struct work_struct *work)
 		 * "completed with err BAD_CMD-" or a "NULL_PRP_PTR_ERR" in the
 		 * syslog
 		 */
-		writel(readl(anv->mmio_nvme + APPLE_ANS_UNKNOWN_CTRL) &
+		writel(readl(anv->mmio_nvme + anv->hw->unknown_ctrl_offset) &
 			~APPLE_ANS_PRP_NULL_CHECK,
-			anv->mmio_nvme + APPLE_ANS_UNKNOWN_CTRL);
+			anv->mmio_nvme + anv->hw->unknown_ctrl_offset);
 	}
 
 	/* Setup the admin queue */
@@ -1700,11 +1700,21 @@ static const struct apple_nvme_hw apple_nvme_t8015_hw = {
 static const struct apple_nvme_hw apple_nvme_t8103_hw = {
 	.has_lsq_nvmmu = true,
 	.max_queue_depth = 64,
+	.unknown_ctrl_offset = 0x24008,
+	.linear_sq_ctrl_offset = 0x24908,
+};
+
+static const struct apple_nvme_hw apple_nvme_t8103_fw15_hw = {
+	.has_lsq_nvmmu = true,
+	.max_queue_depth = 64,
+	.unknown_ctrl_offset = 0x28130,
+	.linear_sq_ctrl_offset = 0x2813c,
 };
 
 static const struct of_device_id apple_nvme_of_match[] = {
 	{ .compatible = "apple,t8015-nvme-ans2", .data = &apple_nvme_t8015_hw },
 	{ .compatible = "apple,t8103-nvme-ans2", .data = &apple_nvme_t8103_hw },
+	{ .compatible = "apple,t8103-fw15-nvme-ans2", .data = &apple_nvme_t8103_fw15_hw },
 	{ .compatible = "apple,nvme-ans2", .data = &apple_nvme_t8103_hw },
 	{},
 };
