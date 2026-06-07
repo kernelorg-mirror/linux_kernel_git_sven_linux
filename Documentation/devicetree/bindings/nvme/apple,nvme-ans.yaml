@@ -13,6 +13,13 @@ properties:
   compatible:
     oneOf:
       - const: apple,t8015-nvme-ans2
+      - const: apple,t8103-fw15-nvme-ans2
+      - items:
+          - enum:
+              - apple,t8112-fw15-nvme-ans2
+              - apple,t6000-fw15-nvme-ans2
+              - apple,t6020-fw15-nvme-ans2
+          - const: apple,t8103-fw15-nvme-ans2
       - items:
           - const: apple,t6020-nvme-ans2
           - const: apple,t8103-nvme-ans2
@@ -75,6 +82,8 @@ if:
         enum:
           - apple,t6000-nvme-ans2
           - apple,t6020-nvme-ans2
+          - apple,t6000-fw15-nvme-ans2
+          - apple,t6020-fw15-nvme-ans2
 then:
   properties:
     power-domains:
