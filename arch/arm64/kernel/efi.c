@@ -242,6 +242,125 @@ bool efi_runtime_fixup_exception(struct pt_regs *regs, const char *msg)
 /* EFI requires 8 KiB of stack space for runtime services */
 static_assert(THREAD_SIZE >= SZ_8K);
 
+struct efi_psci_table efi_psci __ro_after_init;
+static u64 efi_psci_asid __ro_after_init;
+static unsigned long efi_psci_handler_table __initdata = EFI_INVALID_TABLE_ADDR;
+const efi_config_table_type_t efi_arch_tables[] __initconst = {
+	{LINUX_EFI_ARM_PSCI_HANDLER_TABLE_GUID, &efi_psci_handler_table},
+	{}
+};
+
+static void __init arm64_efi_init_psci(void)
+{
+	struct efi_psci_table *psci;
+
+	if (efi_psci_handler_table == EFI_INVALID_TABLE_ADDR)
+		return;
+
+	psci = early_memremap_ro(efi_psci_handler_table, sizeof(*psci));
+	if (psci == NULL) {
+		pr_warn("Unable to map PSCI table.\n");
+		return;
+	}
+
+	memcpy(&efi_psci, psci, sizeof(*psci));
+	early_memunmap(psci, sizeof(*psci));
+}
+
+void __init arm64_efi_init(void)
+{
+	efi_init();
+	arm64_efi_init_psci();
+}
+
+/*
+ * This is __switch_mm -> check_and_switch_context with the switch_mm_fastpath
+ * hardcoded because we assume that the ASID for the target mm is already
+ * valid and does not have to be allocated: For efi_mm this happens at boot
+ * time and current->active_mm is switched behind the allocator's back as
+ * if e.g. an exception was taken such that it remains valid after returning
+ * from PSCI. We need this because we may be called from cpuidle context which
+ * must not contain any lock tracepoints.
+ */
+static void efi_psci_set_pgd(bool enable)
+{
+	struct mm_struct *mm;
+
+	WARN_ON(!efi_psci_asid);
+
+	if (enable)
+		mm = &efi_mm;
+	else
+		mm = current->active_mm;
+
+	if (system_uses_ttbr0_pan())
+		update_saved_ttbr0(current, mm);
+	else if (mm == &init_mm)
+		cpu_set_reserved_ttbr0();
+	else
+		cpu_switch_mm(mm->pgd, mm);
+}
+
+unsigned long arm64_efi_psci_call(unsigned long function_id, unsigned long arg0,
+				  unsigned long arg1, unsigned long arg2)
+{
+	unsigned long ret, flags;
+
+	/*
+	 * Note that unlike for regular EFI runtime calls we don't have to save
+	 * FP/SIMD state here because the handler ABI forbids using those.
+	 * Likewise, we do not take any lock here because the handler has to be
+	 * re-entrant. We couldn't take the sleeping efi_runtime_lock here
+	 * anyway because we may be called from atomic context for cpuidle
+	 * and CPU bring-up. cpuidle context also requires us to skip the
+	 * ASID allocator (unless we want a lockdep splat) and we instead
+	 * rely on efi_mm being pinned during init. CPU bring-up happens too
+	 * early but can safely take the normal mm path.
+	 */
+	raw_local_irq_save(flags);
+	if (likely(efi_psci_asid))
+		efi_psci_set_pgd(true);
+	else
+		efi_set_pgd(&efi_mm);
+	uaccess_ttbr0_enable();
+	post_ttbr_update_workaround();
+
+	ret = efi_psci.psci_handler(function_id, arg0, arg1, arg2);
+
+	uaccess_ttbr0_disable();
+	if (likely(efi_psci_asid))
+		efi_psci_set_pgd(false);
+	else
+		efi_set_pgd(current->active_mm);
+	raw_local_irq_restore(flags);
+
+	return ret;
+}
+
+/*
+ * Pin efi_mm's ASID so that arm64_efi_psci_call() can install it without
+ * going through the ASID allocator.
+ *
+ * arm64_mm_context_get() needs max_pinned_asids which asids_update_limit()
+ * sets at arch_initcall time, thus we use arch_initcall_sync here.
+ * The cpuidle PSCI-calls come from the PSCI cpuidle driver which is only
+ * registered using device_initcall such that this is early enough.
+ * Any earlier PSCI calls do not run in idle context and will fall
+ * back to the usual efi_set_pgd path without causing lockdep issues.
+ */
+static int __init arm64_efi_psci_pin_asid(void)
+{
+	if (!efi_psci.psci_handler)
+		return 0;
+
+	efi_psci_asid = arm64_mm_context_get(&efi_mm);
+	if (!efi_psci_asid)
+		pr_warn("Failed to pin efi_mm ASID for the EFI PSCI conduit\n");
+
+	return 0;
+}
+arch_initcall_sync(arm64_efi_psci_pin_asid);
+
 static int __init arm64_efi_rt_init(void)
 {
 	void *p;
