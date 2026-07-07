@@ -14,6 +14,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/bitfield.h>
 #include <linux/kobject.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -933,6 +934,7 @@ char * __init efi_md_typeattr_format(char *buf, size_t size,
 {
 	char *pos;
 	int type_len;
+	int attr_len;
 	u64 attr;
 
 	pos = buf;
@@ -954,27 +956,47 @@ char * __init efi_md_typeattr_format(char *buf, size_t size,
 		     EFI_MEMORY_WP | EFI_MEMORY_RP | EFI_MEMORY_XP |
 		     EFI_MEMORY_NV | EFI_MEMORY_SP | EFI_MEMORY_CPU_CRYPTO |
 		     EFI_MEMORY_MORE_RELIABLE | EFI_MEMORY_HOT_PLUGGABLE |
-		     EFI_MEMORY_RUNTIME))
+		     EFI_MEMORY_RUNTIME | EFI_MEMORY_ISA_VALID | EFI_MEMORY_ISA_MASK)) {
 		snprintf(pos, size, "|attr=0x%016llx]",
 			 (unsigned long long)attr);
-	else
-		snprintf(pos, size,
-			 "|%3s|%2s|%2s|%2s|%2s|%2s|%2s|%2s|%2s|%2s|%3s|%2s|%2s|%2s|%2s]",
-			 attr & EFI_MEMORY_RUNTIME		? "RUN" : "",
-			 attr & EFI_MEMORY_HOT_PLUGGABLE	? "HP"  : "",
-			 attr & EFI_MEMORY_MORE_RELIABLE	? "MR"  : "",
-			 attr & EFI_MEMORY_CPU_CRYPTO   	? "CC"  : "",
-			 attr & EFI_MEMORY_SP			? "SP"  : "",
-			 attr & EFI_MEMORY_NV			? "NV"  : "",
-			 attr & EFI_MEMORY_XP			? "XP"  : "",
-			 attr & EFI_MEMORY_RP			? "RP"  : "",
-			 attr & EFI_MEMORY_WP			? "WP"  : "",
-			 attr & EFI_MEMORY_RO			? "RO"  : "",
-			 attr & EFI_MEMORY_UCE			? "UCE" : "",
-			 attr & EFI_MEMORY_WB			? "WB"  : "",
-			 attr & EFI_MEMORY_WT			? "WT"  : "",
-			 attr & EFI_MEMORY_WC			? "WC"  : "",
-			 attr & EFI_MEMORY_UC			? "UC"  : "");
+		return buf;
+	}
+
+	attr_len = snprintf(pos, size,
+		 "|%3s|%2s|%2s|%2s|%2s|%2s|%2s|%2s|%2s|%2s|%3s|%2s|%2s|%2s|%2s",
+		 attr & EFI_MEMORY_RUNTIME		? "RUN" : "",
+		 attr & EFI_MEMORY_HOT_PLUGGABLE	? "HP"  : "",
+		 attr & EFI_MEMORY_MORE_RELIABLE	? "MR"  : "",
+		 attr & EFI_MEMORY_CPU_CRYPTO		? "CC"  : "",
+		 attr & EFI_MEMORY_SP			? "SP"  : "",
+		 attr & EFI_MEMORY_NV			? "NV"  : "",
+		 attr & EFI_MEMORY_XP			? "XP"  : "",
+		 attr & EFI_MEMORY_RP			? "RP"  : "",
+		 attr & EFI_MEMORY_WP			? "WP"  : "",
+		 attr & EFI_MEMORY_RO			? "RO"  : "",
+		 attr & EFI_MEMORY_UCE			? "UCE" : "",
+		 attr & EFI_MEMORY_WB			? "WB"  : "",
+		 attr & EFI_MEMORY_WT			? "WT"  : "",
+		 attr & EFI_MEMORY_WC			? "WC"  : "",
+		 attr & EFI_MEMORY_UC			? "UC"  : "");
+	if (attr_len >= size)
+		return buf;
+
+	pos += attr_len;
+	size -= attr_len;
+
+	if (attr & EFI_MEMORY_ISA_VALID) {
+		int isa_len = snprintf(pos, size, "|isa=0x%04llx",
+				       (unsigned long long)FIELD_GET(EFI_MEMORY_ISA_MASK, attr));
+
+		if (isa_len >= size)
+			return buf;
+
+		pos += isa_len;
+		size -= isa_len;
+	}
+
+	snprintf(pos, size, "]");
 	return buf;
 }
 

@@ -197,7 +197,7 @@ static __init void reserve_regions(void)
 		npages = md->num_pages;
 
 		if (efi_enabled(EFI_DBG)) {
-			char buf[64];
+			char buf[96];
 
 			pr_info("  0x%012llx-0x%012llx %s\n",
 				paddr, paddr + (npages << EFI_PAGE_SHIFT) - 1,

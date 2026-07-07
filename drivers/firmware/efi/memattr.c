@@ -196,7 +196,7 @@ int __init efi_memattr_apply_permissions(struct mm_struct *mm,
 		efi_memory_desc_t md;
 		unsigned long size;
 		bool valid;
-		char buf[64];
+		char buf[96];
 
 		valid = entry_is_valid(efi_memdesc_ptr(tbl->entry, tbl->desc_size, i),
 				       &md);
