@@ -49,7 +49,14 @@
  */
 static int resident_cpu = -1;
 struct psci_operations psci_ops;
-static enum arm_smccc_conduit psci_conduit = SMCCC_CONDUIT_NONE;
+
+enum psci_conduit {
+	PSCI_CONDUIT_NONE,
+	PSCI_CONDUIT_SMC,
+	PSCI_CONDUIT_HVC,
+};
+
+static enum psci_conduit psci_conduit = PSCI_CONDUIT_NONE;
 
 bool psci_tos_resident_on(int cpu)
 {
@@ -268,13 +275,13 @@ static unsigned long psci_migrate_info_up_cpu(void)
 			      0, 0, 0);
 }
 
-static void set_conduit(enum arm_smccc_conduit conduit)
+static void set_conduit(enum psci_conduit conduit)
 {
 	switch (conduit) {
-	case SMCCC_CONDUIT_HVC:
+	case PSCI_CONDUIT_HVC:
 		invoke_psci_fn = __invoke_psci_fn_hvc;
 		break;
-	case SMCCC_CONDUIT_SMC:
+	case PSCI_CONDUIT_SMC:
 		invoke_psci_fn = __invoke_psci_fn_smc;
 		break;
 	default:
@@ -296,9 +303,9 @@ static int get_set_conduit_method(const struct device_node *np)
 	}
 
 	if (!strcmp("hvc", method)) {
-		set_conduit(SMCCC_CONDUIT_HVC);
+		set_conduit(PSCI_CONDUIT_HVC);
 	} else if (!strcmp("smc", method)) {
-		set_conduit(SMCCC_CONDUIT_SMC);
+		set_conduit(PSCI_CONDUIT_SMC);
 	} else {
 		pr_warn("invalid \"method\" property: %s\n", method);
 		return -EINVAL;
@@ -642,8 +649,21 @@ static void __init psci_init_migrate(void)
 
 static void __init psci_init_smccc(void)
 {
+	enum arm_smccc_conduit conduit;
 	u32 ver = ARM_SMCCC_VERSION_1_0;
 	int feature;
+
+	switch (psci_conduit) {
+	case PSCI_CONDUIT_HVC:
+		conduit = SMCCC_CONDUIT_HVC;
+		break;
+	case PSCI_CONDUIT_SMC:
+		conduit = SMCCC_CONDUIT_SMC;
+		break;
+	default:
+		conduit = SMCCC_CONDUIT_NONE;
+		break;
+	}
 
 	feature = psci_features(ARM_SMCCC_VERSION_FUNC_ID);
 
@@ -651,7 +671,7 @@ static void __init psci_init_smccc(void)
 		u32 ret;
 		ret = invoke_psci_fn(ARM_SMCCC_VERSION_FUNC_ID, 0, 0, 0);
 		if (ret >= ARM_SMCCC_VERSION_1_1) {
-			arm_smccc_version_init(ret, psci_conduit);
+			arm_smccc_version_init(ret, conduit);
 			ver = ret;
 		}
 	}
@@ -841,9 +861,9 @@ int __init psci_acpi_init(void)
 	pr_info("probing for conduit method from ACPI.\n");
 
 	if (acpi_psci_use_hvc())
-		set_conduit(SMCCC_CONDUIT_HVC);
+		set_conduit(PSCI_CONDUIT_HVC);
 	else
-		set_conduit(SMCCC_CONDUIT_SMC);
+		set_conduit(PSCI_CONDUIT_SMC);
 
 	return psci_probe();
 }
